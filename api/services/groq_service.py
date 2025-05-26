@@ -3,9 +3,14 @@ import json
 from groq import Groq
 from decouple import config
 
+# URLS AND LLM MODEL
 foursquare_details_url = 'https://api.foursquare.com/v3/places/'
 foursquare_search_url = 'https://api.foursquare.com/v3/places/search'
 groq_meta_model = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+# API KEYS
+ALLOWED_KEYS = {'query', 'near', 'open_now', 'max_price', 'hours'}
+GROQ_CONTEXT = 'you are an ai agent thats going to parse customer query looking for a restaurant, please restrict your response to a json with no explaination on how you achieved the result, return a json from their prompt in the following format, with max_price being a range between 1 and 4, with 4 being the most expensive: "action": "restaurant_search", "parameters": ["query": "sushi", "near": "downtoan Los Angeles", "max_price": "1". "open_now": true"]'
 FOURSQUARE_API_KEY = config('FOURSQUARE_API_KEY')
 GROQ_API_KEY = config('GROQ_API_KEY')
 client = Groq(api_key=GROQ_API_KEY)
@@ -16,6 +21,7 @@ def get_cuisine_string(categories):
         return 'Unknown'
     return ', '.join([cat.get('name', 'Unknown') for cat in categories])
 
+# GET MORE DETAILS FROM SPECIFIC FSQ_ID
 def fetch_details(fsq_id, field):
     headers = {
         "accept": "application/json",
@@ -25,16 +31,12 @@ def fetch_details(fsq_id, field):
     data = response.json()
     return data
 
-
-
-
+# GET BASIC RESTAURANT DETAILS
 def resto_search(data):
-    allowed_keys = {'query', 'near', 'open_now', 'max_price'}
+    
     params_raw = data.get("parameters", {})
-    params = {k: v for k, v in params_raw.items() if k in allowed_keys}
+    params = {k: v for k, v in params_raw.items() if k in ALLOWED_KEYS}
     print('params: ', params)
-
-    url = "https://api.foursquare.com/v3/places/search"
 
     headers = {
         "accept": "application/json",
@@ -64,16 +66,18 @@ def resto_search(data):
         cuisine = get_cuisine_string(result.get('categories', []))
         rating = fetch_details(result.get('fsq_id'), '?fields=rating').get('rating')
         price = fetch_details(result.get('fsq_id'), '?fields=price').get('price')
+        hours = fetch_details(result.get('fsq_id'), '?fields=hours').get('hours')
         # categories = result.
 
-        print(f"Name: {name}\nAddress: {address}\nCuisine: {cuisine}\nRating: {rating}\nPrice: {price}\n{'-'*40}")
+        print(f"Name: {name}\nAddress: {address}\nCuisine: {cuisine}\nRating: {rating}\nPrice: {price}\nHours: {hours}\n{'-'*40}")
 
         restaurants.append({
             "name": name,
             "address": address,
             "cuisine": cuisine,
             "rating": rating,
-            "price": price
+            "price": price,
+            "hours": hours
         })
 
     return {"restaurants": restaurants}
@@ -84,12 +88,12 @@ def draft_message(content, role='user'):
         "content": content
     }
 
-
+# CALL GROQ TO PARSE USER PROMPT
 def groq_call(prompt):
     messages = [
         {
             'role': 'system',
-            'content': 'you are an ai agent thats going to parse customer query looking for a restaurant, please restrict your response to a json with no explaination on how you achieved the result, return a json from their prompt in the following format, with max_price being a range between 1 and 4, with 4 being the most expensive: "action": "restaurant_search", "parameters": ["query": "sushi", "near": "downtoan Los Angeles", "max_price": "1". "open_now": true"]'
+            'content': GROQ_CONTEXT
         }
     ]
 
